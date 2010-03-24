@@ -1,19 +1,98 @@
 import scala._
 
-class Card {
-  val location : Option[Location] = None
-  val name = "A card"
-  override def toString = { "Hey I'm a card" }
+class Color { }
+class Red extends Color {}
+object Red extends Red { override def toString = { "Red" } }
+class Green extends Color {}
+object Green extends Green { override def toString = { "Green" } }
+class Blue extends Color {}
+object Blue extends Blue{ override def toString = { "Blue" } }
+class White extends Color {}
+class Black extends Color {}
+
+class CardType
+class Instant extends CardType
+object Instant extends Instant
+class Land extends CardType
+object Land extends Land
+class Enchantment extends CardType
+object Enchantment extends Enchantment
+
+
+class Ability
+class TapForOneMana(color : Color) extends Ability {
+  override def toString = { "Tap for one " + color }
 }
 
-trait Color { }
-trait Red extends Color {}
-trait Green extends Color {}
-trait Blue extends Color {}
-trait White extends Color {}
-trait Black extends Color {}
+abstract class Card {
+  def color : List[Color] = {
+    colorIntercepts.foldLeft(baseColors) { (a : List[Color], b : ColorInterceptor) => b.interceptColor(a) }
+  }
+  def cardType : List[CardType] = {
+    baseTypes
+  }
+  def abilities : List[Ability] = {
+    abilityIntercepts.foldLeft(baseAbilities) { (a : List[Ability], b : AbilityInterceptor) => b.interceptAbilities(a) }
+  }
 
-trait Creature {}
+  val baseColors    : List[Color]
+  val baseTypes     : List[CardType]
+
+  val baseAbilities : List[Ability] = List()
+  def registerAbilityIntercept(interceptor : AbilityInterceptor) {
+    abilityIntercepts = interceptor :: abilityIntercepts
+  }
+  var colorIntercepts : List[ColorInterceptor] = List()
+  def registerColorIntercept(interceptor : ColorInterceptor) {
+    colorIntercepts = interceptor :: colorIntercepts
+  }
+
+  var abilityIntercepts : List[AbilityInterceptor] = List()
+
+  val location : Option[Location] = None
+  val name = "unknown card"
+  override def toString = {
+    name + " (" + color + ")" + abilities.map { "   - " + _ }.foldLeft("") { _ + "\n" + _ }
+  }
+}
+
+trait ColorInterceptor {
+  def interceptColor(existingColors : List[Color]) : List[Color]
+}
+
+trait AbilityInterceptor {
+  def interceptAbilities(existingAbilities : List[Ability]) : List[Ability]
+}
+
+class LightningBolt extends Card {
+  override val baseColors = List(Red)
+  override val baseTypes  = List(Instant)
+  override val name = "Lightning Bolt"
+}
+
+class Forest extends Card {
+  override val baseColors = List(Green)
+  override val baseTypes  = List(Land)
+  override val baseAbilities : List[Ability] = List(new TapForOneMana(Green))
+  override val name = "Forest"
+}
+
+class SpreadingSeas(target : Card) extends Card with ColorInterceptor with AbilityInterceptor {
+  target.registerColorIntercept(this)
+  target.registerAbilityIntercept(this)
+
+  override val baseColors = List(Blue)
+  override val baseTypes  = List(Enchantment)
+  override val name = "Spreading Seas"
+
+  override def interceptColor(existingColors : List[Color]) : List[Color] = {
+    List(Blue)
+  }
+
+  override def interceptAbilities(existingAbilities : List[Ability]) : List[Ability] = {
+    List(new TapForOneMana(Blue))
+  }
+}
 
 class Player {}
 class PlayerA extends Player {}
@@ -36,7 +115,7 @@ abstract class Location {
   }
 
   override def toString = {
-    name + "\n" + cards.map{"  " + _.name}.foldLeft("") { _ + "\n" + _ }
+    name + "\n" + cards.map{"  " + _}.foldLeft("") { _ + "\n" + _ }
   }
 }
 class Hand extends Location {
@@ -52,14 +131,20 @@ class GameState {
   val inPlay = new InPlay
 }
 
+abstract class TargetedEffect[TargetType] {
+}
+
+
 object Mtg {
   def main(args: Array[String]) {
     val state = new GameState
-    state.hand.add( new Card with Red with Creature)
+    val card = new LightningBolt
+    val forest = new Forest
+    state.hand.add( card )
+    state.hand.add( forest )
+    state.hand.add( new SpreadingSeas(forest) )
     //val other = new Card with Colored[Green] with Creature
     //val yourCard = new Card with Colored[Red] with Creature
-
-
     //myHand.add(yourCard)
     println(state.hand)
   }
