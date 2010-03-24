@@ -26,28 +26,30 @@ class TapForOneMana(color : Color) extends Ability {
 
 abstract class Card {
   def color : List[Color] = {
-    colorIntercepts.foldLeft(baseColors) { (a : List[Color], b : ColorInterceptor) => b.interceptColor(a) }
+    intercepts.foldLeft(baseColors) {
+      case (a : List[_], b : ColorInterceptor) => b.interceptColor(a)
+      case (a : List[_], _) => a
+    }
   }
   def cardType : List[CardType] = {
     baseTypes
   }
   def abilities : List[Ability] = {
-    abilityIntercepts.foldLeft(baseAbilities) { (a : List[Ability], b : AbilityInterceptor) => b.interceptAbilities(a) }
+    intercepts.foldLeft(baseAbilities) {
+      case (a : List[_], b : AbilityInterceptor) => b.interceptAbilities(a)
+      case (a : List[_], _) => a
+    }
   }
 
-  val baseColors    : List[Color]
+  val baseColors    : List[Color]    = List()
+  val baseAbilities : List[Ability]  = List()
   val baseTypes     : List[CardType]
 
-  val baseAbilities : List[Ability] = List()
-  def registerAbilityIntercept(interceptor : AbilityInterceptor) {
-    abilityIntercepts = interceptor :: abilityIntercepts
-  }
-  var colorIntercepts : List[ColorInterceptor] = List()
-  def registerColorIntercept(interceptor : ColorInterceptor) {
-    colorIntercepts = interceptor :: colorIntercepts
-  }
 
-  var abilityIntercepts : List[AbilityInterceptor] = List()
+  var intercepts : List[Interceptor] = List()
+  def registerIntercept(intercept : Interceptor) {
+    intercepts = intercept :: intercepts
+  }
 
   val location : Option[Location] = None
   val name = "unknown card"
@@ -56,11 +58,12 @@ abstract class Card {
   }
 }
 
-trait ColorInterceptor {
+trait Interceptor
+trait ColorInterceptor extends Interceptor {
   def interceptColor(existingColors : List[Color]) : List[Color]
 }
 
-trait AbilityInterceptor {
+trait AbilityInterceptor extends Interceptor {
   def interceptAbilities(existingAbilities : List[Ability]) : List[Ability]
 }
 
@@ -78,8 +81,7 @@ class Forest extends Card {
 }
 
 class SpreadingSeas(target : Card) extends Card with ColorInterceptor with AbilityInterceptor {
-  target.registerColorIntercept(this)
-  target.registerAbilityIntercept(this)
+  target.registerIntercept(this)
 
   override val baseColors = List(Blue)
   override val baseTypes  = List(Enchantment)
