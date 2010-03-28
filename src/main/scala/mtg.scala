@@ -46,8 +46,11 @@ class Enchantment extends CardType
 object Enchantment extends Enchantment
 
 
-class Ability
-class TapForOneMana(color : Color) extends Ability {
+trait ManaAbility {
+  val card : Card
+}
+class Ability(val card : Card)
+class TapForOneMana(override val card: Card, val color : Color) extends Ability(card) with ManaAbility {
   override def toString = { "Tap for one " + color }
 }
 
@@ -78,10 +81,13 @@ abstract class Card {
     intercepts = intercept :: intercepts
   }
 
-  val location : Option[Location] = None
+  var location : Option[Location] = None
+  var controller : Option[Player] = None
+  var tapped = false
+
   val name = "unknown card"
   override def toString = {
-    (name + " (" + color.mkString(", ") + ")" :: abilities.map { "   - " + _ }).mkString("\n")
+    name + " (" + color.mkString(", ") + ") (" + location.getOrElse(new Unknown).name + ")"
   }
 }
 
@@ -104,8 +110,15 @@ class LightningBolt extends Card {
 class Forest extends Card {
   override val baseColors = List(Green)
   override val baseTypes  = List(Land)
-  override val baseAbilities : List[Ability] = List(new TapForOneMana(Green))
+  override val baseAbilities : List[Ability] = List(new TapForOneMana(this, Green))
   override val name = "Forest"
+}
+
+class Mountain extends Card {
+  override val baseColors = List(Red)
+  override val baseTypes  = List(Land)
+  override val baseAbilities : List[Ability] = List(new TapForOneMana(this, Red))
+  override val name = "Mountain"
 }
 
 class SpreadingSeas(target : Card) extends Card with ColorInterceptor with AbilityInterceptor {
@@ -120,7 +133,7 @@ class SpreadingSeas(target : Card) extends Card with ColorInterceptor with Abili
   }
 
   override def interceptAbilities(existingAbilities : List[Ability]) : List[Ability] = {
-    List(new TapForOneMana(Blue))
+    List(new TapForOneMana(target, Blue))
   }
 }
 
@@ -134,10 +147,12 @@ abstract class Location {
       case Some(l) => l.remove(card)
       case None    => {}
     }
+    card.location = Some(this)
     cards = card :: cards
   }
 
   def remove(card : Card) {
+    card.location = None
     cards = cards - card
   }
 
@@ -145,11 +160,13 @@ abstract class Location {
     (name :: cards.map{"  " + _}).mkString("\n")
   }
 }
+class Unknown extends Location { val name = "Unknown" }
 class Hand extends Location { val name = "Hand" }
 class Battlefield extends Location { val name = "Battlefield" }
 class Exile extends Location { val name = "Exile" }
 class Graveyard extends Location { val name = "Graveyard" }
 class Sideboard extends Location { val name = "Sideboard" }
+class Stack extends Location { val name = "Stack" }
 class Library extends Location {
   val name = "Library"
 
@@ -169,6 +186,7 @@ class GameState {
   var players : List[Player] = List()
   val battlefield = new Battlefield
   val exile = new Exile
+  val stack = new Stack
   var currentStep = Step.Untap
 }
 
@@ -187,6 +205,10 @@ object Step {
   object Draw extends Step
   object Upkeep extends Step
   object PrecombatMain extends Step
+  object Combat extends Step
+  object PostcombatMain extends Step
+  object End extends Step
+  object Cleanup extends Step
 }
 
 class GameMaster {
@@ -213,11 +235,12 @@ class GameMaster {
 
     println("\nDealing")
     state.players.foreach(player => {
-      //player.hand.add(player.library.draw)
+      player.hand.add(player.library.draw)
+      player.hand.add(player.library.draw)
+      player.hand.add(player.library.draw)
       player.agent.receiveHand(player.hand)
     })
 
-    println("\nMain game loop")
     // TODO: This doesn't work for a continuous game loop
     state.players.foreach(currentTurn => {
       // TODO: Untap step
@@ -228,12 +251,34 @@ class GameMaster {
       actions.foreach(_.execute(state, currentTurn))
 
       // Main step
-      state.players.foreach(player => {
-        var actions = player.agent.receivePriority(
-          new PublicGameState(Step.PrecombatMain, currentTurn, state.battlefield.cards),
-          new PrivateGameState(player))
-        actions.foreach(_.execute(state, player))
-      })
+      var allPassed = false
+      while (allPassed == false) {
+        allPassed = true
+        state.players.foreach(player => {
+          var actions = player.agent.receivePriority(
+            new PublicGameState(Step.PrecombatMain, currentTurn, state.battlefield.cards),
+            new PrivateGameState(player))
+          actions.foreach(_.execute(state, player))
+          if (!actions.isEmpty)
+            allPassed = false
+        })
+      }
+
+      // End turn
+      allPassed = false
+      println("END TURN")
+      while (allPassed == false) {
+        println("Starting round of priority")
+        allPassed = true
+        state.players.foreach(player => {
+          var actions = player.agent.receivePriority(
+            new PublicGameState(Step.End, currentTurn, state.battlefield.cards),
+            new PrivateGameState(player))
+          actions.foreach(_.execute(state, player))
+          if (!actions.isEmpty)
+            allPassed = false
+        })
+      }
     })
   }
 }
@@ -254,11 +299,59 @@ object Action {
 
   class PlayLand(land : Card) extends Action {
     override def execute(state : GameState, owner : Player) {
-      state.battlefield.add(land)
-      println(owner.agent + " played a land: " + land)
+      if (owner.landsPlayedThisTurn < 1) {
+        state.battlefield.add(land)
+        land.controller = Some(owner)
+        owner.landsPlayedThisTurn += 1
+        println(owner.agent + " played a land: " + land)
+      }
+    }
+  }
+
+  class ActivateManaAbility(ability : Ability) extends Action {
+    override def execute(state : GameState, owner : Player) {
+      // TODO: Do this right - check the ability activation cost
+      if (!ability.card.tapped)
+        ability.card.tapped = true
+    }
+  }
+
+  class Cast(
+    card : Card,
+    determineCost: () => List[Cost],
+    activateManaAbilities: () => List[ActivateManaAbility],
+    payments: () => List[Payment]
+  ) extends Action {
+    override def execute(state : GameState, owner : Player) {
+      state.stack.add(card) // 601.2a
+      card.controller = Some(owner) // 601.2a
+      println(owner.agent + " casting a spell: " + card)
+      // 601.2e determine cost
+      //   Choose X, sacrifice
+      //   For now, agent reads off card
+      var cost = determineCost()
+      // 601.2f activate mana abilities
+      //   Put mana in pool
+      var abilities = activateManaAbilities()
+      abilities.foreach(_.execute(state, owner)) // TODO: Triggers?
+
+      payments().foreach(_.execute(state, owner))
+      // 602.2g pay cost
+      //   List[Payment] -> ManaPayment[Red](2)
+    }
+  }
+
+  abstract class Payment extends Action
+  class RemoveManaFromPool[T <: Color](amount : Int) extends Payment {
+    override def execute(state : GameState, owner : Player) {
     }
   }
 }
+
+class Cost
+class ManaPayment[T <: Color](amount : Int) extends Cost
+
+
 abstract class Agent {
   /* Called in setup to get the card list of this agent */
   def deck : List[Card]
@@ -272,8 +365,8 @@ abstract class Agent {
 class DumbAgent(name :String) extends Agent {
   override def deck : List[Card] = {
     List(
-      new Forest,
-      new Forest,
+      new Mountain,
+      new Mountain,
       new LightningBolt,
       new LightningBolt,
       new LightningBolt,
@@ -286,20 +379,49 @@ class DumbAgent(name :String) extends Agent {
     println(hand)
   }
   override def receivePriority(state : PublicGameState, me : PrivateGameState) : List[Action] = {
-    if (state.currentTurn != me.player)
-      return List()
     state.currentStep match {
       case Step.Draw => {
         List(new Action.DrawCard)
       }
       case Step.PrecombatMain => {
-        var land = me.hand.cards.find(_.cardTypes(state).exists(_ match {
-          case Land => true
-          case _    => false
-        }))
-        land match {
-          case Some(land) => List(new Action.PlayLand(land))
-          case None    => List()
+        if (state.currentTurn != me.player || me.player.landsPlayedThisTurn >= 1) {
+          List()
+        } else {
+          var land = me.hand.cards.find(_.cardTypes(state).exists(_ match {
+            case Land => true
+            case _    => false
+          }))
+          land match {
+            case Some(land) => List(new Action.PlayLand(land))
+            case None    => List()
+          }
+        }
+      }
+      case Step.End => {
+        var mountain = state.battlefield.filter(
+          _.controller.getOrElse(null) == me.player
+        ).find(_ match {
+          case c : Mountain => !c.tapped
+          case _ => false
+        })
+        var spell = me.hand.cards.find(_ match {
+          case c : LightningBolt => { true}
+          case a    => { false }
+        })
+        mountain match {
+          case Some(mountain) => {
+            spell match {
+              case Some(spell) => {
+                List(new Action.Cast(
+                  spell,
+                  () => List(new ManaPayment[Red](1)),
+                  () => List(new Action.ActivateManaAbility(mountain.abilities.head)),
+                  () => List(new Action.RemoveManaFromPool[Red](1))))
+              }
+              case None => List()
+            }
+          }
+          case None => List()
         }
       }
     }
@@ -316,6 +438,7 @@ class Player(val agent : Agent) {
   val library   = new Library
   val graveyard = new Graveyard
   val sideboard = new Sideboard
+  var landsPlayedThisTurn = 0
 }
 
 abstract class TargetedEffect[TargetType] {
@@ -325,7 +448,6 @@ abstract class TargetedEffect[TargetType] {
 object Mtg {
   def main(args: Array[String]) {
     val game = new GameMaster
-    game.registerAgent(new DumbAgent("bob"))
     game.registerAgent(new DumbAgent("fred"))
     game.start
    /*
