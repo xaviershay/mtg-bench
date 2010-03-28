@@ -83,11 +83,16 @@ abstract class Card {
 
   var location : Option[Location] = None
   var controller : Option[Player] = None
+  var owner = { controller } // TODO: WRONG
   var tapped = false
 
   val name = "unknown card"
   override def toString = {
     name + " (" + color.mkString(", ") + ") (" + location.getOrElse(new Unknown).name + ")"
+  }
+
+  def resolve(state : GameState) : List[Effect] = {
+    List()
   }
 }
 
@@ -104,6 +109,12 @@ trait AbilityInterceptor extends Interceptor {
 class LightningBolt extends Card {
   override val baseColors = List(Red)
   override val baseTypes  = List(Instant)
+  override def resolve(state : GameState) = {
+    controller match {
+      case Some(player) => List(new Effect.DamageToPlayer(player, 3))
+      case None => List()
+    }
+  }
   override val name = "Lightning Bolt"
 }
 
@@ -166,7 +177,17 @@ class Battlefield extends Location { val name = "Battlefield" }
 class Exile extends Location { val name = "Exile" }
 class Graveyard extends Location { val name = "Graveyard" }
 class Sideboard extends Location { val name = "Sideboard" }
-class Stack extends Location { val name = "Stack" }
+class Stack extends Location {
+  val name = "Stack"
+
+  def push(card : Card) {
+    add(card)
+  }
+
+  def top : Card = {
+    cards.reverse.head
+  }
+}
 class Library extends Location {
   val name = "Library"
 
@@ -266,18 +287,42 @@ class GameMaster {
 
       // End turn
       allPassed = false
+      var stackEmpty = false
       println("END TURN")
-      while (allPassed == false) {
-        println("Starting round of priority")
-        allPassed = true
-        state.players.foreach(player => {
-          var actions = player.agent.receivePriority(
-            new PublicGameState(Step.End, currentTurn, state.battlefield.cards),
-            new PrivateGameState(player))
-          actions.foreach(_.execute(state, player))
-          if (!actions.isEmpty)
-            allPassed = false
-        })
+      while (!stackEmpty) {
+        while (!allPassed) {
+          println("Starting round of priority")
+          allPassed = true
+          state.players.foreach(player => {
+            // Check SB effects
+            if (state.players.exists{ (a) => println("Life: " + a.life); a.life <= 0}) {
+              println("THE GAME IS OVER")
+              return
+            }
+
+
+
+            var actions = player.agent.receivePriority(
+              new PublicGameState(Step.End, currentTurn, state.battlefield.cards),
+              new PrivateGameState(player))
+            actions.foreach(_.execute(state, player))
+            if (!actions.isEmpty)
+              allPassed = false
+          })
+        }
+        println("Stack: " + state.stack)
+        stackEmpty = state.stack.cards.isEmpty
+        if (!stackEmpty) {
+          allPassed = false
+          var toResolve = state.stack.top
+
+          var effects = toResolve.resolve(state)
+          effects.foreach(_.execute(state))
+          toResolve.controller match { // TODO: WRONG
+            case Some(player) => player.graveyard.add(toResolve)
+            case None => {}
+          }
+        }
       }
     })
   }
@@ -318,14 +363,19 @@ object Action {
 
   class Cast(
     card : Card,
+    determineTarget: (Target) => Player,
     determineCost: () => List[Cost],
     activateManaAbilities: () => List[ActivateManaAbility],
     payments: () => List[Payment]
   ) extends Action {
     override def execute(state : GameState, owner : Player) {
-      state.stack.add(card) // 601.2a
       card.controller = Some(owner) // 601.2a
+      state.stack.add(card) // 601.2a
       println(owner.agent + " casting a spell: " + card)
+      // 601.2c choose targets
+      // Just does players for now
+      var targetPlayer = determineTarget(new Target.Player)
+
       // 601.2e determine cost
       //   Choose X, sacrifice
       //   For now, agent reads off card
@@ -335,9 +385,12 @@ object Action {
       var abilities = activateManaAbilities()
       abilities.foreach(_.execute(state, owner)) // TODO: Triggers?
 
-      payments().foreach(_.execute(state, owner))
-      // 602.2g pay cost
+      // 601.2g pay cost
       //   List[Payment] -> ManaPayment[Red](2)
+      payments().foreach(_.execute(state, owner))
+
+      // 601.2h trigger abilities for when a spell is cast
+
     }
   }
 
@@ -346,6 +399,23 @@ object Action {
     override def execute(state : GameState, owner : Player) {
     }
   }
+}
+
+abstract class Effect {
+  def execute(state : GameState)
+}
+
+object Effect {
+  class DamageToPlayer(val player : Player, val amount : Int) extends Effect {
+    override def execute(state : GameState) {
+      player.takeDamage(state, amount)
+    }
+  }
+}
+
+class Target
+object Target {
+  class Player extends Target
 }
 
 class Cost
@@ -414,6 +484,11 @@ class DumbAgent(name :String) extends Agent {
               case Some(spell) => {
                 List(new Action.Cast(
                   spell,
+                  (target : Target) => {
+                    target match {
+                      case p : Target.Player => me.player
+                    }
+                  },
                   () => List(new ManaPayment[Red](1)),
                   () => List(new Action.ActivateManaAbility(mountain.abilities.head)),
                   () => List(new Action.RemoveManaFromPool[Red](1))))
@@ -439,6 +514,12 @@ class Player(val agent : Agent) {
   val graveyard = new Graveyard
   val sideboard = new Sideboard
   var landsPlayedThisTurn = 0
+  var life = 3
+
+  def takeDamage(state : GameState, amount : Int) {
+    // TODO: Triggers
+    life -= amount
+  }
 }
 
 abstract class TargetedEffect[TargetType] {
