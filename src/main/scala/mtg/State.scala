@@ -1,7 +1,7 @@
 package mtg
 
 class GameState {
-  var cards : List[Card]  = List()
+  //var cards : List[Card]  = List()
   var players : List[Player] = List()
   val battlefield = new Battlefield
   val exile = new Exile

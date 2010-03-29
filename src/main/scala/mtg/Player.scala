@@ -7,7 +7,7 @@ class Player(val agent : Agent) extends Targetable {
   val graveyard = new Graveyard
   val sideboard = new Sideboard
   var landsPlayedThisTurn = 0
-  var life = 3
+  var life = 20
 
   def takeDamage(state : GameState, amount : Int) {
     // TODO: Triggers

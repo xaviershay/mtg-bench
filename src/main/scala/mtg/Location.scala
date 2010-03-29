@@ -1,24 +1,24 @@
 package mtg
 
 
-class ListExtensions[A <: AnyRef](xs : List[A]) {
-  def randomPermute: List[A] = {
-    val rand = new util.Random
-    val a = xs.toArray
-    for (i <- a.length - 1 to 1 by -1) {
-      val i1 = rand.nextInt(i + 1)
-      val t = a(i)
-      a.update(i, a(i1))
-      a.update(i1, t)
+object ListExtensions {
+  def removeAt[A](n: Int, ls: List[A]): (List[A], A) = ls.splitAt(n) match {
+    case (Nil, _) if n < 0 => throw new NoSuchElementException
+    case (pre, e :: post)  => (pre ::: post, e)
+    case (pre, Nil)        => throw new NoSuchElementException
+  }
+
+  def randomSelect[A](n: Int, ls: List[A]): List[A] =
+    if (n <= 0) Nil
+    else {
+      val (rest, e) = removeAt((new util.Random).nextInt(ls.length), ls)
+      e :: randomSelect(n - 1, rest)
     }
-    a.toList
+
+  def randomPermute[A](ls : List[A]) : List[A] = {
+    randomSelect(ls.length, ls)
   }
 }
-
-object Implicits {
-  implicit def listExtensions[A <: AnyRef](xs : List[A]) = new ListExtensions(xs)
-}
-import Implicits._
 
 abstract class Location {
   val name : String
@@ -63,10 +63,11 @@ class Library extends Location {
   val name = "Library"
 
   def shuffle {
-    cards = cards.randomPermute
+    cards = ListExtensions.randomPermute(cards)
   }
 
   def draw : Card = {
+    if (cards.isEmpty) throw new GameOver
     val ret = cards.head
     cards = cards.tail
     ret

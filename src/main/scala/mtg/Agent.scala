@@ -15,6 +15,11 @@ class DumbAgent(name :String) extends Agent {
     List(
       new Mountain,
       new Mountain,
+      new Mountain,
+      new Mountain,
+      new LightningBolt,
+      new LightningBolt,
+      new LightningBolt,
       new LightningBolt,
       new LightningBolt,
       new LightningBolt,
