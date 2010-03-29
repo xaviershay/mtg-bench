@@ -10,7 +10,7 @@ object Action {
     override def execute(state : GameState, owner : Player) {
       val card = owner.library.draw
       owner.hand.add(card)
-      println(owner.agent + " drew a card")
+      //println(owner.agent + " drew a card")
     }
   }
 
@@ -20,7 +20,7 @@ object Action {
         state.battlefield.add(land)
         land.controller = Some(owner)
         owner.landsPlayedThisTurn += 1
-        println(owner.agent + " played a land: " + land)
+        //println(owner.agent + " played a land: " + land)
       }
     }
   }
@@ -43,7 +43,7 @@ object Action {
     override def execute(state : GameState, owner : Player) {
       card.controller = Some(owner) // 601.2a
       state.stack.add(card) // 601.2a
-      println(owner.agent + " casting a spell: " + card)
+      //println(owner.agent + " casting a spell: " + card)
       // 601.2c choose targets
       // Just does players for now
       var targetPlayer = determineTarget(new Target.Player)

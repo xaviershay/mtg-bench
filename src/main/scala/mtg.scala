@@ -9,8 +9,17 @@ class GameMaster {
     agents = agent :: agents
   }
 
-  def start() {
-    println("Starting game")
+  def start {
+    try {
+      while(true) {
+        state.players.foreach(player => runTurn(player))
+      }
+    } catch {
+      case e : mtg.GameOver => {}//println("Game over")
+    }
+  }
+
+  def setup {
     agents.foreach(agent => {
       var player = new Player(agent)
       state.players = player :: state.players
@@ -18,11 +27,11 @@ class GameMaster {
         player.library.add(card)
       })
       player.library.shuffle
-      println("Registered library for " + agent)
-      println(player.library)
+      //println("Registered library for " + agent)
+      //println(player.library)
     })
 
-    println("\nDealing")
+    //println("\nDealing")
     state.players.foreach(player => {
       player.hand.add(player.library.draw)
       player.hand.add(player.library.draw)
@@ -33,18 +42,11 @@ class GameMaster {
       player.hand.add(player.library.draw)
       player.agent.receiveHand(player.hand)
     })
-
-    try {
-      while(true) {
-        state.players.foreach(player => runTurn(player))
-      }
-    } catch {
-      case e : mtg.GameOver => println("Game over")
-    }
   }
 
   def runTurn(currentTurn : Player) {
-    println("\nNEW TURN - " + currentTurn.life + " life")
+    state.turn += 1
+    //println("\nNEW TURN - " + currentTurn.life + " life")
 
     // TODO: Untap step
     state.battlefield.cards.filter(
@@ -121,9 +123,19 @@ class GameMaster {
 
 object Mtg {
   def main(args: Array[String]) {
-    val game = new GameMaster
-    game.registerAgent(new DumbAgent("fred"))
-    game.start
+    val results = (0 until 61).map { (noOfMountains) => {
+      println(noOfMountains + " mountains")
+      val turnsToComplete = (0 until 100).map{ (i) => {
+        val game = new GameMaster
+        game.registerAgent(new DumbAgent("fred", noOfMountains))
+        game.setup
+        game.start
+        game.state.turn
+      }}.toList
+      (noOfMountains, turnsToComplete.foldLeft(0) {_+_} / turnsToComplete.length.toFloat)
+    }}
+    println(results)
+    println(results.map {(a) => a._1 + "," + a._2}.toList.mkString("\n"))
    /*
     val state = new GameState
     val card = new LightningBolt

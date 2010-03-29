@@ -8,6 +8,7 @@ class GameState {
   val stack = new Stack
   var spellStack : List[Spell] = List()
   var currentStep = Step.Untap
+  var turn = 0
 }
 
 class PublicGameState(

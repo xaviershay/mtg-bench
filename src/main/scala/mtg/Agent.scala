@@ -10,26 +10,15 @@ abstract class Agent {
   /* Main game loop, called every time this agent receives priority */
   def receivePriority(state : PublicGameState, me : PrivateGameState) : List[Action]
 }
-class DumbAgent(name :String) extends Agent {
+class DumbAgent(name :String, noOfMountains : Int) extends Agent {
   override def deck : List[Card] = {
-    List(
-      new Mountain,
-      new Mountain,
-      new Mountain,
-      new Mountain,
-      new LightningBolt,
-      new LightningBolt,
-      new LightningBolt,
-      new LightningBolt,
-      new LightningBolt,
-      new LightningBolt,
-      new LightningBolt
-    )
+    val mountains : List[Card] = (0 until noOfMountains).map { (i) => new Mountain }.toList
+    val bolts : List[Card] = (0 until 60 - noOfMountains).map { (i) => new LightningBolt }.toList
+
+    mountains ++ bolts
   }
 
   override def receiveHand(hand : Hand) {
-    println("Received Hand:")
-    println(hand)
   }
   override def receivePriority(state : PublicGameState, me : PrivateGameState) : List[Action] = {
     state.currentStep match {
