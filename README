@@ -1,0 +1,14 @@
+= mtg-bench
+
+A (very incomplete) implementation of the Magic: The Gathering ruleset in scala.
+
+== Status
+
+Everything subject to change.
+Mostly untested.
+
+Contains rules and AI for playing a mountain/lightning bolt deck
+
+== Quickstart
+
+  sbt run
